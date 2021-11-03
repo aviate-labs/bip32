@@ -15,6 +15,7 @@ func checksum(data []byte) ([]byte, error) {
 		return nil, bytes.ErrTooLarge
 	}
 	data = hasher.Sum(nil)
+	hasher = sha256.New()
 	if _, err := hasher.Write(data); err != nil {
 		return nil, bytes.ErrTooLarge
 	}

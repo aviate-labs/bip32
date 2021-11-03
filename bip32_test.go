@@ -11,6 +11,7 @@ var testVectors []vector
 
 //go:embed testdata/vectors.json
 var vectors []byte
+
 func TestVectors(t *testing.T) {
 	for _, test := range testVectors {
 		privKey, err := NewMasterKey(test.seed)
