@@ -24,6 +24,14 @@ var (
 	}
 )
 
+func Decode(b []byte) ([]byte, error) {
+	return BitcoinEncoding.Decode(b)
+}
+
+func Encode(b []byte) []byte {
+	return BitcoinEncoding.Encode(b)
+}
+
 type Encoding struct {
 	encodeMap [58]byte
 	decodeMap [256]int64
