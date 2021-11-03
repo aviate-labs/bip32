@@ -5,8 +5,14 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"crypto/sha512"
+	"fmt"
 
 	"github.com/aviate-labs/bip32/internal/base58"
+	"github.com/aviate-labs/secp256k1"
+)
+
+var (
+	curve = secp256k1.S256()
 )
 
 func checksum(data []byte) ([]byte, error) {
@@ -35,6 +41,68 @@ type Key struct {
 	ChainCode [32]byte
 	// KeyData for the public/private key.
 	KeyData [33]byte
+
+	IsPublic bool // Internal use.
+}
+
+func (k Key) PublicKey() Key {
+	if k.IsPublic {
+		return k
+	}
+
+	// Compress.
+	x, y := curve.ScalarBaseMult(k.KeyData[:])
+	var buffer bytes.Buffer
+	buffer.WriteByte(byte(0x2) + byte(y.Bit(0)))
+	bs := x.Bytes()
+	for i := 0; i < (33 - 1 - len(bs)); i++ {
+		buffer.WriteByte(0x0)
+	}
+	buffer.Write(bs)
+
+	var keyData [33]byte
+	copy(keyData[:], buffer.Bytes())
+
+	return Key{
+		Version:     [4]byte{0x04, 0x88, 0xB2, 0x1E},
+		Depth:       k.Depth,
+		ChildNumber: k.ChildNumber,
+		FingerPrint: k.FingerPrint,
+		ChainCode:   k.ChainCode,
+		KeyData:     keyData,
+		IsPublic:    true,
+	}
+}
+
+func Deserialize(data []byte) (Key, error) {
+	if len(data) != 82 {
+		return Key{}, fmt.Errorf("invalid key length")
+	}
+
+	var key Key
+	copy(key.Version[:], data[:4])
+	copy(key.Depth[:], data[4:5])
+	copy(key.FingerPrint[:], data[5:9])
+	copy(key.ChildNumber[:], data[9:13])
+	copy(key.ChainCode[:], data[13:45])
+	copy(key.KeyData[:], data[45:78])
+	if data[45] != 0 {
+		key.IsPublic = true
+	}
+
+	// Validation.
+	actual := data[len(data)-4:]
+	expected, err := checksum(data[:len(data)-4])
+	if err != nil {
+		return Key{}, err
+	}
+	for i := range actual {
+		if actual[i] != expected[i] {
+			return Key{}, fmt.Errorf("invalid checksum")
+		}
+	}
+
+	return key, nil
 }
 
 // A seed sequence between 128 and 512 bits; 256 bits is advised.

@@ -4,6 +4,7 @@ import (
 	_ "embed"
 	"encoding/hex"
 	"encoding/json"
+	"reflect"
 	"testing"
 )
 
@@ -19,7 +20,40 @@ func TestVectors(t *testing.T) {
 			t.Fatal(err)
 		}
 		if k := privKey.String(); k != test.privateKey {
-			t.Error(k, test.privateKey)
+			t.Fatal(k, test.privateKey)
+		}
+
+		{
+			ser, err := privKey.Serialize()
+			if err != nil {
+				t.Error(err)
+			}
+			des, err := Deserialize(ser)
+			if err != nil {
+				t.Error(err)
+			}
+			if !reflect.DeepEqual(privKey, des) {
+				t.Error(privKey, des)
+			}
+		}
+
+		pubKey := privKey.PublicKey()
+		if k := pubKey.String(); k != test.publicKey {
+			t.Fatal(k, test.publicKey)
+		}
+
+		{
+			ser, err := pubKey.Serialize()
+			if err != nil {
+				t.Error(err)
+			}
+			des, err := Deserialize(ser)
+			if err != nil {
+				t.Error(err)
+			}
+			if !reflect.DeepEqual(pubKey, des) {
+				t.Error(pubKey, des)
+			}
 		}
 	}
 }
