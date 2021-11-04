@@ -3,7 +3,6 @@ package bip32
 import (
 	"bytes"
 	"crypto/hmac"
-	"crypto/sha256"
 	"crypto/sha512"
 	"fmt"
 
@@ -16,16 +15,11 @@ var (
 )
 
 func checksum(data []byte) ([]byte, error) {
-	hasher := sha256.New()
-	if _, err := hasher.Write(data); err != nil {
-		return nil, bytes.ErrTooLarge
+	h, err := doubleHash256(data)
+	if err != nil {
+		return nil, err
 	}
-	data = hasher.Sum(nil)
-	hasher = sha256.New()
-	if _, err := hasher.Write(data); err != nil {
-		return nil, bytes.ErrTooLarge
-	}
-	return hasher.Sum(nil)[:4], nil
+	return h[:4], nil
 }
 
 type Key struct {
@@ -43,35 +37,6 @@ type Key struct {
 	KeyData [33]byte
 
 	IsPublic bool // Internal use.
-}
-
-func (k Key) PublicKey() Key {
-	if k.IsPublic {
-		return k
-	}
-
-	// Compress.
-	x, y := curve.ScalarBaseMult(k.KeyData[:])
-	var buffer bytes.Buffer
-	buffer.WriteByte(byte(0x2) + byte(y.Bit(0)))
-	bs := x.Bytes()
-	for i := 0; i < (33 - 1 - len(bs)); i++ {
-		buffer.WriteByte(0x0)
-	}
-	buffer.Write(bs)
-
-	var keyData [33]byte
-	copy(keyData[:], buffer.Bytes())
-
-	return Key{
-		Version:     [4]byte{0x04, 0x88, 0xB2, 0x1E},
-		Depth:       k.Depth,
-		ChildNumber: k.ChildNumber,
-		FingerPrint: k.FingerPrint,
-		ChainCode:   k.ChainCode,
-		KeyData:     keyData,
-		IsPublic:    true,
-	}
 }
 
 func Deserialize(data []byte) (Key, error) {
@@ -120,13 +85,26 @@ func NewMasterKey(seed []byte) (Key, error) {
 	copy(chain[:], i[32:])
 
 	return Key{
-		Version:     [4]byte{0x04, 0x88, 0xAD, 0xE4},
-		Depth:       [1]byte{0x00},
-		FingerPrint: [4]byte{0x00, 0x00, 0x00, 0x00},
-		ChildNumber: [4]byte{0x00, 0x00, 0x00, 0x00},
-		ChainCode:   chain,
-		KeyData:     key,
+		Version:   [4]byte{0x04, 0x88, 0xAD, 0xE4},
+		ChainCode: chain,
+		KeyData:   key,
 	}, nil
+}
+
+func (k Key) PublicKey() Key {
+	if k.IsPublic {
+		return k
+	}
+
+	return Key{
+		Version:     [4]byte{0x04, 0x88, 0xB2, 0x1E},
+		Depth:       k.Depth,
+		ChildNumber: k.ChildNumber,
+		FingerPrint: k.FingerPrint,
+		ChainCode:   k.ChainCode,
+		KeyData:     private2public(k.KeyData),
+		IsPublic:    true,
+	}
 }
 
 func (k Key) Serialize() ([]byte, error) {
