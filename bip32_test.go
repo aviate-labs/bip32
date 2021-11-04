@@ -47,12 +47,8 @@ func TestVectors(t *testing.T) {
 			if err != nil {
 				t.Error(err)
 			}
-			des, err := Deserialize(ser)
-			if err != nil {
+			if _, err := Deserialize(ser); err != nil {
 				t.Error(err)
-			}
-			if !reflect.DeepEqual(pubKey, des) {
-				t.Error(pubKey, des)
 			}
 		}
 	}

@@ -34,7 +34,8 @@ type Key struct {
 	// Chain code.
 	ChainCode [32]byte
 	// KeyData for the public/private key.
-	KeyData [33]byte
+	PrivateKeyData [32]byte
+	PublicKeyData  [33]byte
 
 	IsPublic bool // Internal use.
 }
@@ -50,9 +51,11 @@ func Deserialize(data []byte) (Key, error) {
 	copy(key.FingerPrint[:], data[5:9])
 	copy(key.ChildNumber[:], data[9:13])
 	copy(key.ChainCode[:], data[13:45])
-	copy(key.KeyData[:], data[45:78])
 	if data[45] != 0 {
+		copy(key.PublicKeyData[:], data[45:78])
 		key.IsPublic = true
+	} else {
+		copy(key.PrivateKeyData[:], data[46:78])
 	}
 
 	// Validation.
@@ -73,7 +76,7 @@ func Deserialize(data []byte) (Key, error) {
 // A seed sequence between 128 and 512 bits; 256 bits is advised.
 func NewMasterKey(seed []byte) (Key, error) {
 	var (
-		key   [33]byte
+		key   [32]byte
 		chain [32]byte
 	)
 	hmac := hmac.New(sha512.New, []byte("Bitcoin seed"))
@@ -81,13 +84,13 @@ func NewMasterKey(seed []byte) (Key, error) {
 		return Key{}, err
 	}
 	i := hmac.Sum(nil)
-	copy(key[1:], i[:32])
+	copy(key[:], i[:32])
 	copy(chain[:], i[32:])
 
 	return Key{
-		Version:   [4]byte{0x04, 0x88, 0xAD, 0xE4},
-		ChainCode: chain,
-		KeyData:   key,
+		Version:        [4]byte{0x04, 0x88, 0xAD, 0xE4},
+		ChainCode:      chain,
+		PrivateKeyData: key,
 	}, nil
 }
 
@@ -97,24 +100,32 @@ func (k Key) PublicKey() Key {
 	}
 
 	return Key{
-		Version:     [4]byte{0x04, 0x88, 0xB2, 0x1E},
-		Depth:       k.Depth,
-		ChildNumber: k.ChildNumber,
-		FingerPrint: k.FingerPrint,
-		ChainCode:   k.ChainCode,
-		KeyData:     private2public(k.KeyData),
-		IsPublic:    true,
+		Version:        [4]byte{0x04, 0x88, 0xB2, 0x1E},
+		Depth:          k.Depth,
+		ChildNumber:    k.ChildNumber,
+		FingerPrint:    k.FingerPrint,
+		ChainCode:      k.ChainCode,
+		PrivateKeyData: k.PrivateKeyData,
+		PublicKeyData:  private2public(k.PrivateKeyData),
+		IsPublic:       true,
 	}
 }
 
 func (k Key) Serialize() ([]byte, error) {
+	var data []byte
+	if k.IsPublic {
+		data = k.PublicKeyData[:]
+	} else {
+		data = append([]byte{0x00}, k.PrivateKeyData[:]...)
+	}
+
 	buffer := new(bytes.Buffer)
 	buffer.Write(k.Version[:])
 	buffer.WriteByte(k.Depth[0])
 	buffer.Write(k.FingerPrint[:])
 	buffer.Write(k.ChildNumber[:])
 	buffer.Write(k.ChainCode[:])
-	buffer.Write(k.KeyData[:])
+	buffer.Write(data)
 	bs := buffer.Bytes()
 	cs, err := checksum(bs)
 	if err != nil {

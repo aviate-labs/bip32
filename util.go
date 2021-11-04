@@ -35,7 +35,8 @@ func hash256(data []byte) ([]byte, error) {
 	return h.Sum(nil), nil
 }
 
-func private2public(data [33]byte) [33]byte {
+func private2public(privateKey [32]byte) [33]byte {
+	data := append([]byte{0x00}, privateKey[:]...)
 	x, y := curve.ScalarBaseMult(data[:])
 	var buffer bytes.Buffer
 	buffer.WriteByte(byte(0x2) + byte(y.Bit(0)))
