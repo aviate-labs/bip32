@@ -1,9 +1,9 @@
 package bip32
 
 import (
-	"bytes"
 	"crypto/sha256"
 
+	"github.com/aviate-labs/secp256k1"
 	"golang.org/x/crypto/ripemd160"
 )
 
@@ -38,15 +38,12 @@ func hash256(data []byte) ([]byte, error) {
 func private2public(privateKey [32]byte) [33]byte {
 	data := append([]byte{0x00}, privateKey[:]...)
 	x, y := curve.ScalarBaseMult(data[:])
-	var buffer bytes.Buffer
-	buffer.WriteByte(byte(0x2) + byte(y.Bit(0)))
-	bs := x.Bytes()
-	for i := 0; i < (33 - 1 - len(bs)); i++ {
-		buffer.WriteByte(0x0)
+	pk := secp256k1.PublicKey{
+		Curve: curve,
+		X:     x,
+		Y:     y,
 	}
-	buffer.Write(bs)
-
 	var keyData [33]byte
-	copy(keyData[:], buffer.Bytes())
+	copy(keyData[:], pk.SerializeCompressed())
 	return keyData
 }

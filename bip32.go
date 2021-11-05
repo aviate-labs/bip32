@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"crypto/hmac"
 	"crypto/sha512"
+	"encoding/binary"
 	"fmt"
+	"math/big"
 
 	"github.com/aviate-labs/bip32/internal/base58"
 	"github.com/aviate-labs/secp256k1"
@@ -75,15 +77,15 @@ func Deserialize(data []byte) (Key, error) {
 
 // A seed sequence between 128 and 512 bits; 256 bits is advised.
 func NewMasterKey(seed []byte) (Key, error) {
-	var (
-		key   [32]byte
-		chain [32]byte
-	)
 	hmac := hmac.New(sha512.New, []byte("Bitcoin seed"))
 	if _, err := hmac.Write(seed); err != nil {
 		return Key{}, err
 	}
 	i := hmac.Sum(nil)
+	var (
+		key   [32]byte
+		chain [32]byte
+	)
 	copy(key[:], i[:32])
 	copy(chain[:], i[32:])
 
@@ -91,7 +93,64 @@ func NewMasterKey(seed []byte) (Key, error) {
 		Version:        [4]byte{0x04, 0x88, 0xAD, 0xE4},
 		ChainCode:      chain,
 		PrivateKeyData: key,
+		PublicKeyData:  private2public(key),
 	}, nil
+}
+
+func (k Key) NewChildKey(index uint32) (Key, error) {
+	hardened := 0x80000000 <= index
+
+	// hardened: hmac-sha512(0x00 || ser512(priv) || ser32(i))
+	// normal:   hmac-sha512(ser512(pub) || ser32(i))
+	data := make([]byte, 37)
+	if hardened {
+		copy(data[1:], k.PrivateKeyData[:])
+	} else {
+		copy(data[:], k.PublicKeyData[:])
+	}
+	binary.BigEndian.PutUint32(data[33:], index)
+	var childNumber [4]byte
+	copy(childNumber[:], data[33:])
+	hmac := hmac.New(sha512.New, k.ChainCode[:])
+	if _, err := hmac.Write(data); err != nil {
+		return Key{}, err
+	}
+	i := hmac.Sum(nil)
+	var chain [32]byte
+	copy(chain[:], i[32:])
+
+	if k.IsPublic {
+		// TODO
+	} else {
+		var fingerprint [4]byte
+		h, err := hash160(k.PublicKeyData[:])
+		if err != nil {
+			return Key{}, nil
+		}
+		copy(fingerprint[:], h)
+
+		bi := new(big.Int).SetBytes(i[:32])
+		bp := new(big.Int).SetBytes(k.PrivateKeyData[:])
+		bi = bi.Add(bi, bp)
+		bi = bi.Mod(bi, curve.N)
+
+		bs := bi.Bytes()
+		var key [32]byte
+		copy(key[32-len(bs):], bs)
+
+		return Key{
+			Version:        k.Version,
+			Depth:          [1]byte{k.Depth[0] + 1},
+			ChildNumber:    childNumber,
+			FingerPrint:    fingerprint,
+			ChainCode:      chain,
+			PrivateKeyData: key,
+			PublicKeyData:  private2public(key),
+			IsPublic:       k.IsPublic,
+		}, nil
+	}
+
+	return k, nil
 }
 
 func (k Key) PublicKey() Key {
@@ -106,7 +165,7 @@ func (k Key) PublicKey() Key {
 		FingerPrint:    k.FingerPrint,
 		ChainCode:      k.ChainCode,
 		PrivateKeyData: k.PrivateKeyData,
-		PublicKeyData:  private2public(k.PrivateKeyData),
+		PublicKeyData:  k.PublicKeyData,
 		IsPublic:       true,
 	}
 }
