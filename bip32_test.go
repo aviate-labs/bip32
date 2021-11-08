@@ -10,8 +10,8 @@ import (
 
 var testVectors []vector
 
-//go:embed testdata/vectors.json
-var vectors []byte
+//go:embed testdata/valid.json
+var valid []byte
 
 func TestVectors(t *testing.T) {
 	for _, test := range testVectors {
@@ -79,7 +79,7 @@ func init() {
 			Path       []string
 		}
 	}
-	if err := json.Unmarshal(vectors, &vs); err != nil {
+	if err := json.Unmarshal(valid, &vs); err != nil {
 		panic(err)
 	}
 	for _, v := range vs {
@@ -91,11 +91,16 @@ func init() {
 		for _, c := range v.Children {
 			var path []uint32
 			for _, p := range c.Path {
+				if len(p)%2 != 0 {
+					p = "0" + p // Odd hex lengths.
+				}
 				h, err := hex.DecodeString(p)
 				if err != nil {
 					panic(err)
 				}
-				path = append(path, binary.BigEndian.Uint32(h))
+				b4 := make([]byte, 4)
+				copy(b4[4-len(h):], h)
+				path = append(path, binary.BigEndian.Uint32(b4))
 			}
 			children = append(children, childVector{
 				publicKey:  c.PublicKey,
